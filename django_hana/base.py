@@ -72,7 +72,10 @@ class CursorWrapper(object):
             return getattr(self.cursor, attr)
 
     def __iter__(self):
-        return iter(self.cursor)
+        try:
+            return iter(self.cursor)
+        except TypeError: # need to call fetchall
+            return iter(self.cursor.fetchall())
 
     def __enter__(self):
         return self
@@ -216,17 +219,12 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     }
 
     Database = Database
-
-    def __init__(self, *args, **kwargs):
-        super(DatabaseWrapper, self).__init__(*args, **kwargs)
-
-        self.features = DatabaseFeatures(self)
-
-        self.ops = DatabaseOperations(self)
-        self.client = DatabaseClient(self)
-        self.creation = DatabaseCreation(self)
-        self.introspection = DatabaseIntrospection(self)
-        self.validation = BaseDatabaseValidation(self)
+    SchemaEditorClass = DatabaseSchemaEditor
+    client_class = DatabaseClient
+    creation_class = DatabaseCreation
+    features_class = DatabaseFeatures
+    introspection_class = DatabaseIntrospection
+    ops_class = DatabaseOperations
 
     def close(self):
         self.validate_thread_sharing()
@@ -234,21 +232,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             return
         self.connection.close()
         self.connection = None
-        # try:
-        #     self.connection.close()
-        #     self.connection = None
-        # except Database.Error:
-        #     # In some cases (database restart, network connection lost etc...)
-        #     # the connection to the database is lost without giving Django a
-        #     # notification. If we don't set self.connection to None, the error
-        #     # will occur a every request.
-        #     self.connection = None
-        #     logger.warning('saphana error while closing the connection.',
-        #         exc_info=sys.exc_info()
-        #     )
-        #     raise
 
-    def connect(self):
+    def get_connection_params(self):
         if not self.settings_dict['NAME']:
             from django.core.exceptions import ImproperlyConfigured
             raise ImproperlyConfigured(
@@ -264,36 +249,27 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             conn_params['host'] = self.settings_dict['HOST']
         if self.settings_dict['PORT']:
             conn_params['port'] = self.settings_dict['PORT']
-        self.connection = Database.connect(
+        return conn_params
+
+    def get_new_connection(self, conn_params):
+        conn = Database.connect(
             host=conn_params['host'],
             port=int(conn_params['port']),
             user=conn_params['user'],
             password=conn_params['password']
         )
         # set autocommit on by default
-        self.set_autocommit(True)
         self.default_schema = self.settings_dict['NAME']
         # make it upper case
         self.default_schema = self.default_schema.upper()
-        self.create_or_set_default_schema()
-
-    def _cursor(self):
-        self.ensure_connection()
-        return self.connection.cursor()
+        self.set_default_schema(conn)
+        return conn
 
     def _set_autocommit(self, autocommit):
         self.connection.setautocommit(autocommit)
 
-    def cursor(self):
-        # Call parent, in order to support cursor overriding from apps like Django Debug Toolbar
-        # self.BaseDatabaseWrapper API is very asymetrical here - uses make_debug_cursor() for the
-        # debug cursor, but directly instantiates urils.CursorWrapper for the regular one
-        result = super(DatabaseWrapper, self).cursor()
-        if getattr(result, 'is_hana', False):
-            cursor = result
-        else:
-            cursor = CursorWrapper(self._cursor(), self)
-        return cursor
+    def create_cursor(self, name=None):
+        return CursorWrapper(self.connection.cursor(), self)
 
     def make_debug_cursor(self, cursor):
         return CursorDebugWrapper(cursor, self)
@@ -301,16 +277,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def set_dirty(self):
         pass
 
-    def create_or_set_default_schema(self):
-        """
-        Create if doesn't exist and then make it default
-        """
-        cursor = self.cursor()
-        cursor.execute('select (1) as a from schemas where schema_name=\'%s\'' % self.default_schema)
-        res = cursor.fetchone()
-        if not res:
-            cursor.execute('create schema %s' % self.default_schema)
-        cursor.execute('set schema ' + self.default_schema)
+    def set_default_schema(self, connection):
+        connection.cursor().execute('set schema ' + self.default_schema)
+
+    def init_connection_state(self):
+        pass # django thinks we need this function
 
     def _enter_transaction_management(self, managed):
         """

@@ -5,7 +5,7 @@ import uuid
 from django.contrib.gis.db.backends.base.adapter import WKTAdapter
 from django.contrib.gis.db.backends.base.operations import BaseSpatialOperations
 from django.contrib.gis.db.backends.utils import SpatialOperator
-from django.contrib.gis.geometry.backend import Geometry
+from django.contrib.gis.geos import GEOSGeometry as Geometry
 from django.contrib.gis.measure import Distance
 from django.db.backends.base.operations import BaseDatabaseOperations
 from django.utils import six

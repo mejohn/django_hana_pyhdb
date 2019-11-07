@@ -1,14 +1,15 @@
-#!/usr/bin/env python
-
 from setuptools import setup
 
 setup(
     name='django_hana',
-    version='1.1',
-    description='SAP HANA backend for Django 1.8',
-    author='Max Bothe, Kapil Ratnani',
-    author_email='mathebox@gmail.com, kapil.ratnani@iiitb.net',
-    url='https://github.com/mathebox/django_hana',
+    version='2.1',
+    include_package_data=True,
+    description='SAP HANA backend for Django 2.2',
+    author='NoviSystems, Max Bothe, Kapil Ratnani',
+    author_email='mejohn@novi.systems, mathebox@gmail.com, kapil.ratnani@iiitb.net',
+    url='https://github.com/mejohn/django_hana',
     packages=['django_hana'],
-    test_suite='runtests.runtests',
+    install_requires=[
+        'django~=2.2.0',
+    ],
 )

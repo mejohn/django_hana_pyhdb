@@ -1,6 +1,6 @@
 from __future__ import unicode_literals
 
-from django.db.backends.base.introspection import BaseDatabaseIntrospection, TableInfo
+from django.db.backends.base.introspection import BaseDatabaseIntrospection, TableInfo, FieldInfo
 from django.utils import six
 
 
@@ -43,8 +43,22 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns a description of the table, with the DB-API cursor.description interface.
         """
-        cursor.execute('SELECT * FROM %s LIMIT 1' % self.connection.ops.quote_name(table_name))
-        return cursor.description
+        cursor.execute("SELECT COLUMN_NAME, DATA_TYPE_ID, LENGTH, SCALE, IS_NULLABLE, DEFAULT_VALUE FROM TABLE_COLUMNS WHERE SCHEMA_NAME=%s AND TABLE_NAME=%s", (self.connection.default_schema, table_name))
+        columns = cursor.fetchall()
+        fields = []
+        for c in columns:
+            fields.append(FieldInfo(*[
+                c[0], #name     see PEP249 for details
+                c[1], #type_code
+                None, #display_size
+                c[2], #internal_size
+                None, #precision
+                c[3], #scale
+                c[4], #null_ok
+                c[5], #default
+            ]))
+        return fields
+
 
     def get_relations(self, cursor, table_name):
         """
@@ -94,7 +108,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             # If we're the first column, make the record
             if constraint not in constraints:
                 constraints[constraint] = {
-                    'columns': set(),
+                    'columns': [],
                     'primary_key': bool(pk),
                     'unique': bool(unique),
                     'foreign_key': None,
@@ -102,7 +116,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     'index': True,  # All P and U come with index
                 }
             # Record the details
-            constraints[constraint]['columns'].add(column)
+            constraints[constraint]['columns'].append(column)
         # Fetch fk constraints
         sql = (
             'SELECT constraint_name, column_name, referenced_table_name, referenced_column_name '
@@ -118,7 +132,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             if constraint not in constraints:
                 # If we're the first column, make the record
                 constraints[constraint] = {
-                    'columns': set(),
+                    'columns': [],
                     'primary_key': False,
                     'unique': False,
                     'index': False,
@@ -126,7 +140,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     'foreign_key': (ref_table, ref_column) if ref_column else None,
                 }
             # Record the details
-            constraints[constraint]['columns'].add(column)
+            constraints[constraint]['columns'].append(column)
         # Fetch indexes
         sql = (
             'SELECT index_name, column_name '
@@ -139,7 +153,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
             # If we're the first column, make the record
             if constraint not in constraints:
                 constraints[constraint] = {
-                    'columns': set(),
+                    'columns': [],
                     'primary_key': False,
                     'unique': False,
                     'foreign_key': None,
@@ -147,7 +161,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                     'index': True,
                 }
             # Record the details
-            constraints[constraint]['columns'].add(column)
+            constraints[constraint]['columns'].append(column)
         return constraints
 
     def get_indexes(self, cursor, table_name):
